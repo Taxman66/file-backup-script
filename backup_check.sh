@@ -1,7 +1,10 @@
 #!/bin/bash
 
+working_directory="$1"
+backup_directory="$2"
+
 usage() {
-    echo "Uso: $0 dir_trabalho dir_backup"
+    echo "Usage: $0 working_diretory backup_directory"
     exit 1
 }
 
@@ -9,48 +12,38 @@ if [ "$#" -ne 2 ]; then
     usage
 fi
 
-DIR_TRABALHO=$1
-DIR_BACKUP=$2
-
-if [ ! -d "$DIR_TRABALHO" ]; then
-    echo "Erro: O Diretório de trabalho '$DIR_TRABALHO' não existe."
+if [ ! -d "$working_directory" ]; then
+    echo "Error: The working directory '$working_directory' doesn't exist."
     exit 1
 fi
 
-if [ ! -d "$DIR_BACKUP" ]; then
-    echo "Erro: O Diretório de backup '$DIR_BACKUP' não existe."
+if [ ! -d "$backup_directory" ]; then
+    echo "Error: The backup directory '$backup_directory' doesn't exist."
     exit 1
 fi
-
-check_files() {
-    local src_dir="$1"
-    local dest_dir="$2"
-
-    for file in "$src_dir"/*; do
-        local filename=$(basename "$file")
-        local dest_file="$dest_dir/$filename"
+    for file in "$working_directory"/*; do
+        filename=$(basename "$file")
+        backup_file="$backup_directory/$filename"
 
         if [ -d "$file" ]; then
-            if [ ! -d "$dest_file" ]; then
-                echo "Erro: Diretório $dest_file não existe no backup"
+            if [ ! -d "$backup_file" ]; then
+                echo "Error: The directory $backup_file doesn't exist in the backup directory."
             else
-                check_files "$file" "$dest_file"
+                ./$0 "$file" "$backup_file"
             fi
         elif [ -f "$file" ]; then
-            if [ ! -f "$dest_file" ]; then
-                echo "Erro: Arquivo $dest_file não existe no backup"
+            if [ ! -f "$backup_file" ]; then
+                echo "Error: The file $backup_file doesn't exist in the backup directory."
             else
-                local src_hash=$(md5sum "$file" | cut -d ' ' -f 1)
-                local dest_hash=$(md5sum "$dest_file" | cut -d ' ' -f 1)
+                src_hash=$(md5sum "$file" | cut -d ' ' -f 1)
+                dest_hash=$(md5sum "$backup_file" | cut -d ' ' -f 1)
 
                 if [ "$src_hash" != "$dest_hash" ]; then
-                    echo "Diferença: $file e $dest_file diferem"
+                    echo "Warning: $file and $backup_file are different."
                 fi
             fi
         fi
     done
-}
 
-check_files "$DIR_TRABALHO" "$DIR_BACKUP"
-echo "Verificação concluída."
+echo "Verification done for $working_directory."
 

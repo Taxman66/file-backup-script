@@ -1,14 +1,11 @@
 #!/bin/bash
 
-usage() {
-    echo "Usage: $0 [-c] [-b ignore_file] [-r regex] working_directory backup_directory"
-    exit 1
-}
-
 working_directory="${@: -2:1}"
 backup_directory="${@: -1:1}"
 
 CHECK_MODE=false
+RECURSIVE_OPTIONS=()
+
 IGNORE_FILE=""
 REGEX=""
 ERRORS=0
@@ -17,26 +14,31 @@ UPDATED=0
 COPIED=0
 DELETED=0
 COPIED_SIZE=0
-UPDATED_SIZE=0
 DELETED_SIZE=0
-dir_copied=0
-dir_updated=0
-dir_deleted=0
-dir_copied_size=0
-dir_updated_size=0
-dir_deleted_size=0
-dir_warnings=0
+OPTSTRING=":cb:r:"
 
-while getopts ":cb:r:" opt; do
+usage() {
+    echo "Usage: $0 [-c] [-b ignore_file] [-r regex] working_directory backup_directory"
+    exit 1
+}
+
+if [ "$#" -lt 2 ]; then
+    usage
+fi
+
+while getopts ${OPTSTRING} opt; do
     case $opt in
         c)
             CHECK_MODE=true
+            RECURSIVE_OPTIONS+=("-c")
             ;;
         b)
             IGNORE_FILE="$OPTARG"
+            RECURSIVE_OPTIONS+=("-b" "$OPTARG")
             ;;
         r)
             REGEX="$OPTARG"
+            RECURSIVE_OPTIONS+=("-r" "$OPTARG")
             ;;
         \?)
             echo "Invalid option: -$OPTARG" >&2
@@ -75,44 +77,44 @@ should_ignore() {
 
 for file in "$working_directory"/*; do
     if should_ignore "$(basename "$file")"; then
+        echo "File $file is in the list of files/directories not to be copied. Not copying this file."
         continue
     fi
 
     if [ -n "$REGEX" ] && [[ ! "$(basename "$file")" =~ $REGEX ]]; then
+        echo "File $file doesn't match the provided REGEX. Not copying this file."
         continue
     fi
 
-    mod_date_working=$(stat "$file" | awk '/Modify/ { print $2, $3 }' | xargs -I{} date -d {} +%s)
     backup_file="$backup_directory/$(basename "$file")"
 
     if [ -d "$file" ]; then
-        ./$0 "$file" "$backup_file"
+        ./$0 "${RECURSIVE_OPTIONS[@]}" "$file" "$backup_file"
     else
         file_size=$(stat -c%s "$file")
         if [ -f "$backup_file" ]; then
+            mod_date_working=$(stat "$file" | awk '/Modify/ { print $2, $3 }' | xargs -I{} date -d {} +%s)
             mod_date_backup=$(stat "$backup_file" | awk '/Modify/ { print $2, $3 }' | xargs -I{} date -d {} +%s)
             if (( mod_date_backup > mod_date_working )); then
 				echo "File in backup directory ($backup_file) is newer than corresponding file in source directory. Not copying this file."
-			else
+                WARNINGS=$((WARNINGS + 1))
+            elif (( mod_date_backup == mod_date_working )); then
+                echo "File in backup directory ($backup_file) was modified at the same time as corresponding file in source directory. Not copying this file." 
+            else
                 if [ "$CHECK_MODE" = false ]; then
-                    echo "Updating: $file -> $backup_file"
+                    echo "cp -a $file $backup_file"
                     cp -a "$file" "$backup_file"
                     UPDATED=$((UPDATED + 1))
-                    UPDATED_SIZE=$((UPDATED_SIZE + file_size))
-                    dir_updated=$((dir_updated + 1))
-                    dir_updated_size=$((dir_updated_size + file_size))
                 else
                     echo "cp -a $file $backup_file"
                 fi
             fi
         else
             if [ "$CHECK_MODE" = false ]; then
-                echo "Copying: $file -> $backup_file"
+                echo "cp -a $file $backup_file"
                 cp -a "$file" "$backup_file"
                 COPIED=$((COPIED + 1))
                 COPIED_SIZE=$((COPIED_SIZE + file_size))
-                dir_copied=$((dir_copied + 1))
-                dir_copied_size=$((dir_copied_size + file_size))
             else
                 echo "cp -a $file $backup_file"
             fi
@@ -125,17 +127,16 @@ for file in "$backup_directory"/*; do
     if [ ! -e "$working_file" ]; then
         file_size=$(stat -c%s "$file" 2>/dev/null || echo 0)
         if [ "$CHECK_MODE" = false ]; then
-            echo "Removing: $file (it no longer exists in $working_directory)"
+            echo "rm -rf $file (file no longer exists in $working_directory)"
             rm -rf "$file"
             DELETED=$((DELETED + 1))
             DELETED_SIZE=$((DELETED_SIZE + file_size))
-            dir_deleted=$((dir_deleted + 1))
-            dir_deleted_size=$((dir_deleted_size + file_size))
         else
             echo "rm -rf $file"
         fi
     fi
 done
 
-echo "While backing up $working_directory: $ERRORS Errors; $dir_warnings Warnings; $dir_updated Updated; $dir_copied Copied ($dir_copied_size Bytes); $dir_deleted Deleted ($dir_deleted_size Bytes)"
-
+if [ "$CHECK_MODE" = false ]; then
+    echo "While backuping $working_directory: $ERRORS Errors; $WARNINGS Warnings; $UPDATED Updated; $COPIED Copied ($COPIED_SIZE Bytes); $DELETED Deleted ($DELETED_SIZE Bytes)"
+fi

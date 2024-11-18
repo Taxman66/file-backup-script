@@ -28,12 +28,17 @@ while getopts ${OPTSTRING} opt; do
 	esac
 done
 
-if ! test -d "$working_directory"; then
+if [ ! -d "$working_directory" ]; then
     echo "Working directory not found. Exiting."
     exit 1
 fi
 
-if ! test -d "$backup_directory"; then
+if [[ "$backup_directory" == "$working_directory"* ]]; then
+    echo "Error: The backup directory '$backup_directory' cannot be inside the working directory '$working_directory'."
+    exit 1
+fi
+
+if [ ! -d "$backup_directory" ]; then
 	if [ "$CHECK_MODE" = false ]; then
 		echo "mkdir $backup_directory"
         mkdir "$backup_directory"
@@ -42,44 +47,44 @@ if ! test -d "$backup_directory"; then
 	fi
 fi
 
-for FILE in "$working_directory"/*; do
-	if [ -f "$FILE" ]; then
-		mod_date_working=$(stat "$FILE" | awk '/Modify/ { print $2, $3 }' | xargs -I{} date -d {} +%s)
+for file in "$working_directory"/*; do
+	if [ -f "$file" ]; then
+		mod_date_working=$(stat "$file" | awk '/Modify/ { print $2, $3 }' | xargs -I{} date -d {} +%s)
 
-		backup_file="$backup_directory/$(basename "$FILE")"
+		backup_file="$backup_directory/$(basename "$file")"
 
-		if test -e "$backup_file"; then
+		if [ -f "$backup_file" ]; then
 			mod_date_backup=$(stat "$backup_file" | awk '/Modify/ { print $2, $3 }' | xargs -I{} date -d {} +%s)
 			if (( mod_date_backup > mod_date_working )); then
 				echo "File in backup directory ($backup_file) is newer than corresponding file in source directory. Not copying this file."
 			else
 				if [ "$CHECK_MODE" = false ]; then
-					echo "cp -a $FILE $backup_directory"
-					cp -a "$FILE" "$backup_directory"
+					echo "cp -a $file $backup_directory"
+					cp -a "$file" "$backup_directory"
 				else
-					echo "CHECK MODE: cp -a $FILE $backup_directory"
+					echo "CHECK MODE: cp -a $file $backup_directory"
 				fi
 			fi
 		else
 			if [ "$CHECK_MODE" = false ]; then
-				echo "cp -a $FILE $backup_directory"
-        		cp -a "$FILE" "$backup_directory"
+				echo "cp -a $file $backup_directory"
+        		cp -a "$file" "$backup_directory"
 			else
-				echo "CHECK MODE: cp -a $FILE $backup_directory"
+				echo "CHECK MODE: cp -a $file $backup_directory"
 			fi
 		fi
 	fi	
 done
 
-for FILE in "$backup_directory"/*; do
-	working_file="$working_directory/$(basename "$FILE")"
+for file in "$backup_directory"/*; do
+	working_file="$working_directory/$(basename "$file")"
 
-	if [ -f "$FILE" ] && [ ! -f "$working_file" ]; then
+	if [ -f "$file" ] && [ ! -f "$working_file" ]; then
 		if [ "$CHECK_MODE" = false ]; then
-			echo "rm -f $FILE"
-			rm -f "$FILE"
+			echo "rm -f $file"
+			rm -f "$file"
 		else
-			echo "CHECK MODE: rm -f $FILE"
+			echo "CHECK MODE: rm -f $file"
 		fi
 	fi
 done
